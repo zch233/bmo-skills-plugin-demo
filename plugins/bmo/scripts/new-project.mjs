@@ -20,7 +20,8 @@ import { parseArgs } from 'node:util'
  */
 
 const TEMPLATE_REPO = 'git@codeup.aliyun.com:gupo/rd-frontend/dev/dev-business-kits-docs.git'
-const BMO_REPO = 'git@codeup.aliyun.com:gupo/rd-frontend/bmo/bmo-business-pc.git'
+// BMO_REPO 环境变量可指向别的仓库，用来在推送前验证模板分支
+const BMO_REPO = process.env.BMO_REPO || 'git@codeup.aliyun.com:gupo/rd-frontend/bmo/bmo-business-pc.git'
 
 const { values } = parseArgs({
   options: {
@@ -111,8 +112,8 @@ function mergePackageJson(ours, theirs) {
 }
 
 /**
- * 模板一直在迭代，bmo 分支是在旧模板上做的，package.json 几乎每次都冲突（模板加了 postinstall、bmo 加了 bmo:* 命令），
- * 这种按 JSON 合并自动解决；其他文件冲突就停下来交给人/AI。
+ * bmo 模板分支是在旧模板上做的，模板迭代后可能冲突。bmo 分支已经把 bmo:* 命令放在 scripts 中间（放末尾会和 cli 追加的
+ * postinstall 撞同一行），一般不会冲突；万一 package.json 冲突就按 JSON 合并兜底，其他文件冲突停下来交给人/AI。
  */
 function cherryPick(args, cwd) {
   try {
