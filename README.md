@@ -22,17 +22,22 @@
 
 电脑上没有配置 GitHub SSH key 时，先设置环境变量 `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` 再执行，否则插件下载或更新可能失败。
 
+然后**打开自动更新**：输入 `/plugin` → Marketplaces → 选 `gupo-bmo` → Enable auto-update。不开的话插件会一直停在安装时的版本。
+
 装好后直接说“帮我检查环境”或“帮我创建一个新项目”即可，也可以输入 `/bmo:doctor`、`/bmo:new`。
 
 ## 更新
 
-插件没有固定版本号，跟随仓库最新提交。更新：
+- 开了自动更新：Claude Code 后台自动拉新版本。
+- 没开：输入 `/plugin marketplace update gupo-bmo`。
 
-```
-/plugin marketplace update gupo-bmo
-```
+## 维护
 
-或在 `/plugin` → Marketplaces 里给 `gupo-bmo` 打开自动更新。
+- 插件没写版本号，**推送到 main 即发布**，开了自动更新的人都会拿到，半成品放在别的分支。
+- 发布前：`claude plugin validate .`，再实际建一次项目：`node plugins/bmo/scripts/new-project.mjs --name t --skip-install`。
+- `scripts/new-project.mjs` 复刻了 `@gupo-admin/cli` 的 `new`：**cli 的建项目逻辑改了，这里要跟着改**。
+- 影响使用的改动，在群里通知大家更新（命令见上）。
+- 完整说明见 bmo 仓库 `docs/bmo-ai-usage.md`。
 
 ## 目录
 
