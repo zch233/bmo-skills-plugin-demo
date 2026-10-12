@@ -1,0 +1,10 @@
+{
+  "name": "bmo",
+  "displayName": "BMO 项目助手",
+  "description": "帮产品同学检查开发环境、新建接入 bmo 中台的项目（/bmo:doctor、/bmo:new）",
+  "author": {
+    "name": "GUPO"
+  },
+  "repository": "https://github.com/zch233/bmo-skills-plugin-demo",
+  "keywords": ["bmo", "gupo", "scaffold"]
+}
