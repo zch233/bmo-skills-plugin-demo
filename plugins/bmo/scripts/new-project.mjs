@@ -17,10 +17,10 @@ import { parseArgs } from 'node:util'
  * cli 的 new 是交互式的，AI 跑不了，所以这里照着 cli（@gupo-admin/cli 0.3.0 的 createProject）复刻了一份；
  * cli 的建项目逻辑改了，这里要跟着改。
  *
- * node new-project.mjs --name my-project [--ui] [--dir <父目录>] [--disease "冠心病"] [--skip-install]
+ * node new-project.mjs --name my-project [--ui] [--dir <父目录>] [--disease "糖尿病 DM SLOW_DM"] [--skip-install]
  *   --ui       用新 UI 模板（bmo 的 docs-ui 分支），默认 docs 分支
  *   --disease  默认病种，交给 bmo 的 bmo-disease 脚本：“场景名称 基线编号 场景编码”（必须和智元矩阵病种场景表一致），
- *              清单里只有一条的也可以只写场景名称；不传就是冠心病 CHD CORONARY
+ *              清单里只有一条的也可以只写场景名称；不传就是糖尿病 DM SLOW_DM
  */
 
 const TEMPLATE_REPO = 'git@codeup.aliyun.com:gupo/rd-frontend/dev/dev-business-kits-docs.git'
@@ -32,7 +32,7 @@ const { values } = parseArgs({
     'name': { type: 'string' },
     'ui': { type: 'boolean', default: false },
     'dir': { type: 'string', default: process.cwd() },
-    'disease': { type: 'string', default: '冠心病 CHD CORONARY' },
+    'disease': { type: 'string', default: '糖尿病 DM SLOW_DM' },
     'skip-install': { type: 'boolean', default: false },
   },
 })

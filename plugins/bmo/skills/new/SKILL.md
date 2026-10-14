@@ -16,7 +16,7 @@ description: 新建一个接入 bmo 中台的前端项目：下载古珀模板�
 - **项目名称**：英文小写加中划线，如 `weight-clinic`；用户给中文名就帮他起一个英文名并确认。
 - **放在哪里**：默认当前目录下；用户有习惯的目录就用他的。
 - **界面风格**：旧版界面（bmo 的 docs 分支）还是新版界面（docs-ui 分支）。用户说不清就默认新版。
-- **病种**：项目落地的病种场景，要三项——场景名称、基线编号（disease_code）、场景编码（scene_code），**必须和智元矩阵病种场景表一致**（https://alidocs.dingtalk.com/i/nodes/NZQYprEoWoeA9yzNTq4R4n9xJ1waOeDk ），例如“慢病全科 CHRONIC CHRONIC_ALL”。用户不清楚就请他在那张表里找到项目那一行发过来；用户说先随便用就默认 **冠心病 CHD CORONARY**，并提醒之后要换成实际的。
+- **病种**：项目落地的病种场景，要三项——场景名称、基线编号（disease_code）、场景编码（scene_code），**必须和智元矩阵病种场景表一致**（https://alidocs.dingtalk.com/i/nodes/NZQYprEoWoeA9yzNTq4R4n9xJ1waOeDk ），例如“慢病全科 CHRONIC CHRONIC_ALL”。用户不清楚就请他在那张表里找到项目那一行发过来；用户说先随便用就默认 **糖尿病 DM SLOW_DM**，并提醒之后要换成实际的。
 
 ## 3. 创建
 
@@ -26,7 +26,7 @@ description: 新建一个接入 bmo 中台的前端项目：下载古珀模板�
 node "${CLAUDE_PLUGIN_ROOT}/scripts/new-project.mjs" --name <项目名称> --dir <父目录> [--ui] [--disease "<病种>"]
 ```
 
-`--disease` 写三项（如 `--disease "慢病全科 CHRONIC CHRONIC_ALL"`）；用户默认冠心病时不传。
+`--disease` 写三项（如 `--disease "慢病全科 CHRONIC CHRONIC_ALL"`）；用户默认糖尿病时不传。
 
 脚本会依次：从 codeup 下载模板并初始化 git → 接入 bmo（摘 bmo 模板分支的提交，package.json 冲突自动合并）→ 补齐 `bmo:*` 命令后运行 `pnpm bmo:init`（拉 bmo 子模块、`bmo:update` 更新到最新 master、同步 bmo 的 AI skill）→ 设置默认病种 → `pnpm install`。
 
