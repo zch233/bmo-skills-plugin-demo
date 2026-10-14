@@ -16,11 +16,9 @@
 在 Claude Code 里依次输入：
 
 ```
-/plugin marketplace add zch233/bmo-skills-plugin-demo
+/plugin marketplace add https://gitee.com/z-null/bmo-skills-plugin-demo.git
 /plugin install bmo@gupo-bmo
 ```
-
-电脑上没有配置 GitHub SSH key 时，先设置环境变量 `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` 再执行，否则插件下载或更新可能失败。
 
 然后**打开自动更新**：输入 `/plugin` → Marketplaces → 选 `gupo-bmo` → Enable auto-update。不开的话插件会一直停在安装时的版本。
 
@@ -32,6 +30,14 @@
 - 没开：输入 `/plugin marketplace update gupo-bmo`。
 
 ## 维护
+
+- 主仓库在 Gitee（`git@gitee.com:z-null/bmo-skills-plugin-demo.git`），GitHub（`git@github.com:zch233/bmo-skills-plugin-demo.git`）只做备份。`origin` 配了两个推送地址，`git push` 一次推到两边，保持同步。新机器 clone 后要重新配：
+
+  ```bash
+  git clone git@gitee.com:z-null/bmo-skills-plugin-demo.git
+  git remote set-url --add --push origin git@gitee.com:z-null/bmo-skills-plugin-demo.git
+  git remote set-url --add --push origin git@github.com:zch233/bmo-skills-plugin-demo.git
+  ```
 
 - 插件没写版本号，**推送到 main 即发布**，开了自动更新的人都会拿到，半成品放在别的分支。
 - 发布前：`claude plugin validate .`，再实际建一次项目：`node plugins/bmo/scripts/new-project.mjs --name t --skip-install`。
