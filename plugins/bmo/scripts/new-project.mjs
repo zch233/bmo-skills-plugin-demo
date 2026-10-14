@@ -17,7 +17,8 @@ import { parseArgs } from 'node:util'
  * cli 的 new 是交互式的，AI 跑不了，所以这里照着 cli（@gupo-admin/cli 0.3.0 的 createProject）复刻了一份；
  * cli 的建项目逻辑改了，这里要跟着改。
  *
- * node new-project.mjs --name my-project [--ui] [--dir <父目录>] [--disease "糖尿病 DM SLOW_DM"] [--skip-install]
+ * node new-project.mjs --name my-project [--title "系统中文名"] [--ui] [--dir <父目录>] [--disease "糖尿病 DM SLOW_DM"] [--skip-install]
+ *   --title    系统中文名，写进 env/.env 的 VITE_APP_NAME（浏览器标签标题、页头 / 侧边栏的系统名）；不传保留模板的 Gupo-Admin
  *   --ui       用新 UI 模板（bmo 的 docs-ui 分支），默认 docs 分支
  *   --disease  默认病种，交给 bmo 的 bmo-disease 脚本：“场景名称 基线编号 场景编码”（必须和智元矩阵病种场景表一致），
  *              清单里只有一条的也可以只写场景名称；不传就是糖尿病 DM SLOW_DM
@@ -30,6 +31,7 @@ const BMO_REPO = process.env.BMO_REPO || 'git@codeup.aliyun.com:gupo/rd-frontend
 const { values } = parseArgs({
   options: {
     'name': { type: 'string' },
+    'title': { type: 'string' },
     'ui': { type: 'boolean', default: false },
     'dir': { type: 'string', default: process.cwd() },
     'disease': { type: 'string', default: '糖尿病 DM SLOW_DM' },
@@ -196,7 +198,7 @@ function main() {
   ensureBmoScripts(join(projectPath, 'package.json'))
   run('pnpm', ['bmo:init'], projectPath)
 
-  log('设置默认病种')
+  log('设置默认病种和系统名称')
   if (existsSync(join(projectPath, 'packages/bmo-business-pc/scripts/bmo-disease.mjs'))) {
     try {
       run('node', ['packages/bmo-business-pc/scripts/bmo-disease.mjs', ...values.disease.trim().split(/\s+/)], projectPath)
@@ -208,12 +210,19 @@ function main() {
   else {
     console.log('当前 bmo 版本还没有 bmo-disease 脚本，跳过')
   }
-  run('git', ['add', 'packages/bmo-business-pc', 'package.json', 'src/router/index.ts'], projectPath)
+  if (values.title) {
+    const envPath = join(projectPath, 'env/.env')
+    const env = readFileSync(envPath, 'utf8')
+    const title = values.title.replace(/[\r\n]/g, ' ').trim()
+    writeFileSync(envPath, /^VITE_APP_NAME=.*$/m.test(env) ? env.replace(/^VITE_APP_NAME=.*$/m, `VITE_APP_NAME=${title}`) : `${env.trimEnd()}\nVITE_APP_NAME=${title}\n`)
+    console.log(`系统名称已设为：${title}（env/.env 的 VITE_APP_NAME）`)
+  }
+  run('git', ['add', 'packages/bmo-business-pc', 'package.json', 'src/router/index.ts', 'env/.env'], projectPath)
   try {
     run('git', ['diff', '--cached', '--quiet'], projectPath)
   }
   catch {
-    run('git', ['commit', '-q', '-m', 'chore: 更新 bmo 到最新，补齐 bmo 命令，设置默认病种'], projectPath)
+    run('git', ['commit', '-q', '-m', 'chore: 更新 bmo 到最新，补齐 bmo 命令，设置默认病种和系统名称'], projectPath)
   }
 
   if (!values['skip-install']) {
