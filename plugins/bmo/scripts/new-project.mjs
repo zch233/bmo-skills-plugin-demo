@@ -12,7 +12,7 @@ import { parseArgs } from 'node:util'
  *   git remote add bmo ... && git fetch bmo && git cherry-pick <docs 初始提交>..bmo/docs
  *   补齐 bmo:* 命令 → pnpm bmo:init（拉子模块后 bmo:update 到最新 master，并同步 bmo 的 skill）→ 设置默认病种
  *   pnpm install
- * bmo 每天在更新，模板分支不锁 bmo 版本，统一靠 bmo:update 拿最新。
+ * bmo 每天在更新，模板分支里的 bmo 版本可能滞后，统一靠 bmo:update 拿最新。
  *
  * cli 的 new 是交互式的，AI 跑不了，所以这里照着 cli（@gupo-admin/cli 0.3.0 的 createProject）复刻了一份；
  * cli 的建项目逻辑改了，这里要跟着改。
