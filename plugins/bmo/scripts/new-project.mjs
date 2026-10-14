@@ -10,15 +10,17 @@ import { parseArgs } from 'node:util'
  * 新建一个接入 bmo 的项目，等价于：
  *   npx @gupo-admin/cli@latest new（项目名 + master 分支）
  *   git remote add bmo ... && git fetch bmo && git cherry-pick <docs 初始提交>..bmo/docs
- *   pnpm bmo:init，再把 bmo 子模块更新到最新 master（模板锁的子模块版本可能落后）、补齐 bmo:* 命令、设置默认病种
+ *   补齐 bmo:* 命令 → pnpm bmo:init（拉子模块后 bmo:update 到最新 master，并同步 bmo 的 skill）→ 设置默认病种
  *   pnpm install
+ * bmo 每天在更新，模板分支不锁 bmo 版本，统一靠 bmo:update 拿最新。
  *
  * cli 的 new 是交互式的，AI 跑不了，所以这里照着 cli（@gupo-admin/cli 0.3.0 的 createProject）复刻了一份；
  * cli 的建项目逻辑改了，这里要跟着改。
  *
  * node new-project.mjs --name my-project [--ui] [--dir <父目录>] [--disease "冠心病"] [--skip-install]
  *   --ui       用新 UI 模板（bmo 的 docs-ui 分支），默认 docs 分支
- *   --disease  默认病种，交给 bmo 的 bmo-disease 脚本：病种名，或“名称 编码 场景”；不传就是冠心病
+ *   --disease  默认病种，交给 bmo 的 bmo-disease 脚本：“场景名称 基线编号 场景编码”（必须和智元矩阵病种场景表一致），
+ *              清单里只有一条的也可以只写场景名称；不传就是冠心病 CHD CORONARY
  */
 
 const TEMPLATE_REPO = 'git@codeup.aliyun.com:gupo/rd-frontend/dev/dev-business-kits-docs.git'
@@ -35,8 +37,10 @@ const { values } = parseArgs({
   },
 })
 
-// 宿主要有的 bmo 命令；模板分支可能还没加齐，建项目时补上
+// 宿主要有的 bmo 命令；模板分支可能还没加齐或是旧写法，建项目时补上 / 改成这样
 const BMO_SCRIPTS = {
+  'bmo:init': 'git submodule update --init && pnpm bmo:update',
+  'bmo:update': 'git submodule update --remote --recursive && pnpm bmo:skills',
   'bmo:add': 'node packages/bmo-business-pc/scripts/bmo-add.mjs',
   'bmo:skills': 'node packages/bmo-business-pc/scripts/bmo-skills.mjs',
   'bmo:disease': 'node packages/bmo-business-pc/scripts/bmo-disease.mjs',
@@ -44,7 +48,7 @@ const BMO_SCRIPTS = {
 }
 
 let step = 0
-const TOTAL = values['skip-install'] ? 5 : 6
+const TOTAL = values['skip-install'] ? 4 : 5
 const log = message => console.log(`\n[${++step}/${TOTAL}] ${message}`)
 const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' })
 const output = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' }).trim()
@@ -151,16 +155,15 @@ function cherryPick(args, cwd) {
   }
 }
 
-/** 补上缺的 bmo:* 命令（放在已有 bmo:* 后面，不放 scripts 末尾），bmo:init / bmo:update 后面接上同步 skill */
+/** 已有的 bmo:* 命令原位改成 BMO_SCRIPTS 的写法，缺的补在已有 bmo:* 后面（不放 scripts 末尾） */
 function ensureBmoScripts(pkgPath) {
   const text = readFileSync(pkgPath, 'utf8')
   const pkg = JSON.parse(text)
-  const entries = Object.entries(pkg.scripts ?? {})
+  const entries = Object.entries(pkg.scripts ?? {}).map(([key, value]) => [key, BMO_SCRIPTS[key] ?? value])
   const missing = Object.entries(BMO_SCRIPTS).filter(([key]) => !(key in (pkg.scripts ?? {})))
   const anchor = entries.findLastIndex(([key]) => key.startsWith('bmo:'))
   entries.splice(anchor >= 0 ? anchor + 1 : entries.findIndex(([key]) => key === 'dev') + 1, 0, ...missing)
-  pkg.scripts = Object.fromEntries(entries.map(([key, value]) =>
-    (key === 'bmo:init' || key === 'bmo:update') && !value.includes('bmo:skills') ? [key, `${value} && pnpm bmo:skills`] : [key, value]))
+  pkg.scripts = Object.fromEntries(entries)
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + (text.endsWith('\n') ? '\n' : ''))
 }
 
@@ -189,11 +192,9 @@ function main() {
   const root = output('git', ['rev-list', '--max-parents=0', `bmo/${branch}`], projectPath).split('\n')[0]
   cherryPick(['cherry-pick', `${root}..bmo/${branch}`], projectPath)
 
-  log('拉取 bmo 子模块并更新到最新')
-  run('git', ['submodule', 'update', '--init'], projectPath)
-  // 模板锁的子模块版本可能落后，建项目时直接用 bmo 最新的 master
-  run('git', ['submodule', 'update', '--remote', 'packages/bmo-business-pc'], projectPath)
+  log('拉取 bmo 并更新到最新（pnpm bmo:init）')
   ensureBmoScripts(join(projectPath, 'package.json'))
+  run('pnpm', ['bmo:init'], projectPath)
 
   log('设置默认病种')
   if (existsSync(join(projectPath, 'packages/bmo-business-pc/scripts/bmo-disease.mjs'))) {
@@ -201,7 +202,7 @@ function main() {
       run('node', ['packages/bmo-business-pc/scripts/bmo-disease.mjs', ...values.disease.trim().split(/\s+/)], projectPath)
     }
     catch {
-      console.log('病种没设置成功（见上面的提示），项目照常创建，之后用 bmo-disease 再设置')
+      console.log('病种没设置成功（见上面的提示，三项要和智元矩阵病种场景表一致），项目照常创建，之后用 bmo-disease 再设置')
     }
   }
   else {
@@ -220,12 +221,7 @@ function main() {
     run('pnpm', ['install'], projectPath)
   }
 
-  log('同步 bmo 的 AI skill')
   const pkg = JSON.parse(readFileSync(join(projectPath, 'package.json'), 'utf8'))
-  if (existsSync(join(projectPath, 'packages/bmo-business-pc/scripts/bmo-skills.mjs')))
-    run('node', ['packages/bmo-business-pc/scripts/bmo-skills.mjs'], projectPath)
-  else
-    console.log('当前 bmo 版本还没有 bmo-skills 脚本，跳过')
 
   console.log(`\n✔ 项目已创建：${projectPath}`)
   console.log(`  启动：cd ${name} && pnpm dev${pkg.scripts?.dev ? `（${pkg.scripts.dev}）` : ''}`)
