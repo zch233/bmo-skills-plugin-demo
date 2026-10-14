@@ -51,7 +51,7 @@ node packages/bmo-business-pc/scripts/bmo-add.mjs <模块1> <模块2> ...
 ## 5. 启动并交付
 
 1. 在项目目录后台启动 `pnpm dev`，从输出里读到本地地址和端口（一般是 8080，被占用会自动换）。
-2. **登录打开**：项目接了真实接口，直接打开本地地址会跳到统一登录页。按项目里 `.claude/skills/bmo-open/SKILL.md` 的第 3 步做：打开 `https://demo.group-ds.com/bmo-auth-pc/#/`，请用户登录后在「中台应用」里点任意一个应用、**页面一打开就马上复制地址栏链接**发过来，然后在项目目录运行：
+2. **登录打开**：项目接了真实接口，直接打开本地地址会跳到统一登录页。按项目里 `.claude/skills/bmo-open/SKILL.md` 的第 3 步做：打开 `https://demo.group-ds.com/bmo-auth-pc/#/`，把那一步里给用户的说明**原样**发给用户（包括加粗的“手速一定要快”和链接示例）。项目里没有那个文件时，至少要告诉用户：登录后在「中台应用」里点任意一个应用，**⚠️ 页面一打开就马上复制地址栏链接，手速一定要快**，对的链接很长，形如 `https://demo.group-ds.com/bmo-business-pc/#/auth?system_code=xxx&org_id=xxx&arc_code=xxx&token=eyJ0eXAi...`。拿到后在项目目录运行：
 
    ```bash
    node packages/bmo-business-pc/scripts/bmo-login.mjs "<用户粘贴的链接>" --port <端口> --open
