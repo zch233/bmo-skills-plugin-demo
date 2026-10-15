@@ -30,6 +30,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/new-project.mjs" --name <项目名称> --tit
 
 脚本会依次：从 codeup 下载模板并初始化 git → 接入 bmo（摘 bmo 模板分支的提交，package.json 冲突自动合并）→ 补齐 `bmo:*` 命令后运行 `pnpm bmo:init`（拉 bmo 子模块、`bmo:update` 更新到最新 master、同步 bmo 的 AI skill）→ 设置默认病种和系统名称（`env/.env` 的 `VITE_APP_NAME`）→ `pnpm install`。
 
+脚本输出里有“⚠️ … 接入要求有变化”：说明模板分支建得早，之后 bmo 的接入要求变了。按提示运行那条 `git diff`，只看「接入方式2」里新增或修改的部分，用业务语言告诉用户“bmo 新增了 xx 接入要求，我补到项目里”，然后改**项目自己的文件**（如 `env/.env` 加接口地址、`package.json` 加依赖后重新 `pnpm install`、`src/stores/permission.ts`、`src/router/index.ts`），改完单独提交 `chore: 补齐 bmo 新的接入要求`，并在交付时提醒用户转告 bmo 维护者更新模板分支。
+
 病种没设置成功（三项和清单对不上、同名有多条）时项目照常创建：把脚本给出的相近组合给用户看，请他回智元矩阵表核对，然后按项目里 `.claude/skills/bmo-disease/SKILL.md` 设置。不要自己改用户给的值去凑。
 
 出错时：

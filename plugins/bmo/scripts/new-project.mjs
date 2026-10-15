@@ -189,6 +189,41 @@ function ensureBmoScripts(pkgPath) {
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + (text.endsWith('\n') ? '\n' : ''))
 }
 
+/** README 里「接入方式2」到「END」之间，是 bmo 要求宿主做的改动 */
+function integrationSection(cwd, rev) {
+  try {
+    const readme = output('git', ['-C', 'packages/bmo-business-pc', 'show', `${rev}:README.md`], cwd)
+    const start = readme.indexOf('## 接入方式2')
+    const end = readme.indexOf('## END', start)
+    return start < 0 ? null : readme.slice(start, end < 0 ? undefined : end)
+  }
+  catch {
+    return null
+  }
+}
+
+/**
+ * 模板分支锁的 bmo 版本会滞后，模板里的宿主改动是照那时的 README 做的；bmo:init 更新到最新后，
+ * 这期间 README 的接入要求如果变了，模板就缺了新的接入点，交给 AI 按差异补到宿主
+ */
+function checkIntegrationDrift(cwd) {
+  const pinned = output('git', ['ls-tree', 'HEAD', 'packages/bmo-business-pc'], cwd).split(/\s+/)[2]
+  const latest = output('git', ['-C', 'packages/bmo-business-pc', 'rev-parse', 'HEAD'], cwd)
+  if (!pinned || pinned === latest)
+    return
+  const before = integrationSection(cwd, pinned)
+  const after = integrationSection(cwd, latest)
+  if (before === null || after === null || before === after)
+    return
+  console.log([
+    '',
+    `⚠️ 模板锁定的 bmo（${pinned.slice(0, 8)}）到最新（${latest.slice(0, 8)}）之间，bmo README「接入方式2」的接入要求有变化，`,
+    '   模板里可能缺了新的接入点。请对照差异把新增/修改的要求补到项目自己的文件里（不要改 packages/bmo-business-pc）：',
+    `   git -C packages/bmo-business-pc diff ${pinned.slice(0, 8)} ${latest.slice(0, 8)} -- README.md`,
+    '   并转告 bmo 维护者更新 docs / docs-ui 模板分支。',
+  ].join('\n'))
+}
+
 function main() {
   const name = values.name
   if (!name || !/^[\w.-]+$/.test(name))
@@ -230,6 +265,7 @@ function main() {
   log('拉取 bmo 并更新到最新（pnpm bmo:init）')
   ensureBmoScripts(join(projectPath, 'package.json'))
   run('pnpm', ['bmo:init'], projectPath)
+  checkIntegrationDrift(projectPath)
 
   log('设置默认病种和系统名称')
   if (existsSync(join(projectPath, 'packages/bmo-business-pc/scripts/bmo-disease.mjs'))) {
@@ -250,12 +286,13 @@ function main() {
     writeFileSync(envPath, /^VITE_APP_NAME=.*$/m.test(env) ? env.replace(/^VITE_APP_NAME=.*$/m, `VITE_APP_NAME=${title}`) : `${env.trimEnd()}\nVITE_APP_NAME=${title}\n`)
     console.log(`系统名称已设为：${title}（env/.env 的 VITE_APP_NAME）`)
   }
-  run('git', ['add', 'packages/bmo-business-pc', 'package.json', 'src/router/index.ts', 'env/.env'], projectPath)
+  // mock.json：bmo:skills 会补上 bmo 新增的按钮权限；.claude/：项目自带的 AI skill 和防护配置，一起提交
+  run('git', ['add', 'packages/bmo-business-pc', 'package.json', 'src/router/index.ts', 'src/router/mock.json', 'env/.env', '.claude'], projectPath)
   try {
     run('git', ['diff', '--cached', '--quiet'], projectPath)
   }
   catch {
-    run('git', ['commit', '-q', '-m', 'chore: 更新 bmo 到最新，补齐 bmo 命令，设置默认病种和系统名称'], projectPath)
+    run('git', ['commit', '-q', '-m', 'chore: 更新 bmo 到最新，补齐 bmo 命令和按钮权限，设置默认病种和系统名称'], projectPath)
   }
 
   if (!values['skip-install']) {
