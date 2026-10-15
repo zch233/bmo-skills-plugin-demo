@@ -18,6 +18,7 @@ import { parseArgs } from 'node:util'
  * cli 的建项目逻辑改了，这里要跟着改。
  *
  * node new-project.mjs --name my-project [--title "系统中文名"] [--ui] [--dir <父目录>] [--disease "糖尿病 DM SLOW_DM"] [--skip-install]
+ *   --resume   接入 bmo 时有冲突停下来了：解决冲突、git add 后，用同样的参数加 --resume 再跑一次，接着做完剩下的步骤
  *   --title    系统中文名，写进 env/.env 的 VITE_APP_NAME（浏览器标签标题、页头 / 侧边栏的系统名）；不传保留模板的 Gupo-Admin
  *   --ui       用新 UI 模板（bmo 的 docs-ui 分支），默认 docs 分支
  *   --disease  默认病种，交给 bmo 的 bmo-disease 脚本：“场景名称 基线编号 场景编码”（必须和智元矩阵病种场景表一致），
@@ -36,6 +37,7 @@ const { values } = parseArgs({
     'dir': { type: 'string', default: process.cwd() },
     'disease': { type: 'string', default: '糖尿病 DM SLOW_DM' },
     'skip-install': { type: 'boolean', default: false },
+    'resume': { type: 'boolean', default: false },
   },
 })
 
@@ -134,28 +136,44 @@ function mergePackageJson(ours, theirs) {
  * postinstall 撞同一行），一般不会冲突；万一 package.json 冲突就按 JSON 合并兜底，其他文件冲突停下来交给人/AI。
  */
 function cherryPick(args, cwd) {
-  try {
-    run('git', args, cwd)
-    return
-  }
-  catch {}
-  while (true) {
-    const conflicts = output('git', ['diff', '--name-only', '--diff-filter=U'], cwd).split('\n').filter(Boolean)
-    if (!conflicts.length)
-      return
-    if (conflicts.some(file => file !== 'package.json'))
-      fail(`cherry-pick 有冲突：${conflicts.join('、')}。项目在 ${cwd}，解决后 git add 并 git cherry-pick --continue，再执行 git submodule update --init 和 pnpm install`)
-    const ours = JSON.parse(output('git', ['show', ':2:package.json'], cwd))
-    const theirs = JSON.parse(output('git', ['show', ':3:package.json'], cwd))
-    writeFileSync(join(cwd, 'package.json'), `${JSON.stringify(mergePackageJson(ours, theirs), null, 2)}\n`)
-    run('git', ['add', 'package.json'], cwd)
-    console.log('package.json 冲突已按 JSON 合并（模板字段优先，补上 bmo 新增的命令和依赖）')
+  // 摘到一半（有 sequencer 或 CHERRY_PICK_HEAD）就一直处理到摘完：package.json 冲突自动合并，
+  // 解决后变成空提交的跳过，其他冲突停下来交给人 / AI，之后 --resume 从这里接着来
+  const inProgress = () => existsSync(join(cwd, '.git/sequencer')) || existsSync(join(cwd, '.git/CHERRY_PICK_HEAD'))
+  const CONTINUE = ['-c', 'core.editor=true', 'cherry-pick', '--continue']
+  let next = args
+  for (let round = 0; round < 500; round++) {
     try {
-      run('git', ['-c', 'core.editor=true', 'cherry-pick', '--continue'], cwd)
-      return
+      run('git', next, cwd)
     }
     catch {}
+    if (!inProgress())
+      return
+    const conflicts = output('git', ['diff', '--name-only', '--diff-filter=U'], cwd).split('\n').filter(Boolean)
+    if (conflicts.some(file => file !== 'package.json')) {
+      fail([
+        `接入 bmo 时有冲突：${conflicts.join('、')}（项目在 ${cwd}）。`,
+        '解决：两边改动都保留，同一处以模板（HEAD）为准、补上 bmo 新增的内容；解决完 git add 这些文件，',
+        '然后用同样的参数加 --resume 再运行本脚本，会接着做完剩下的步骤（不要手动 git cherry-pick --continue）。',
+        '这说明 bmo 的模板分支和最新模板有冲突，请转告 bmo 维护者更新 docs / docs-ui 分支。',
+      ].join('\n'))
+    }
+    if (conflicts.length) {
+      const ours = JSON.parse(output('git', ['show', ':2:package.json'], cwd))
+      const theirs = JSON.parse(output('git', ['show', ':3:package.json'], cwd))
+      writeFileSync(join(cwd, 'package.json'), `${JSON.stringify(mergePackageJson(ours, theirs), null, 2)}\n`)
+      run('git', ['add', 'package.json'], cwd)
+      console.log('package.json 冲突已按 JSON 合并（模板字段优先，补上 bmo 新增的命令和依赖）')
+    }
+    let staged = true
+    try {
+      run('git', ['diff', '--cached', '--quiet'], cwd)
+      staged = false
+    }
+    catch {}
+    // 冲突按模板解决后这个提交可能已经没有改动了，跳过它接着摘下一个
+    next = !staged && existsSync(join(cwd, '.git/CHERRY_PICK_HEAD')) ? ['cherry-pick', '--skip'] : CONTINUE
   }
+  fail(`接入 bmo 的 cherry-pick 一直没完成，项目在 ${cwd}，请检查 git status`)
 }
 
 /** 已有的 bmo:* 命令原位改成 BMO_SCRIPTS 的写法，缺的补在已有 bmo:* 后面（不放 scripts 末尾） */
@@ -175,25 +193,38 @@ function main() {
   if (!name || !/^[\w.-]+$/.test(name))
     fail('请用 --name 指定项目名称（字母、数字、- _ .）')
   const projectPath = resolve(values.dir, name)
-  if (existsSync(projectPath))
-    fail(`目录已存在：${projectPath}`)
   if (!output('git', ['config', 'user.name']) || !output('git', ['config', 'user.email']))
     fail('git 还没配置 user.name / user.email，先运行 /bmo:doctor')
-
-  log(`从模板创建项目 ${name}`)
-  mkdirSync(projectPath, { recursive: true })
-  createFromTemplate(name, projectPath)
-  run('git', ['init', '--initial-branch=master'], projectPath)
-  run('git', ['add', '.'], projectPath)
-  run('git', ['commit', '-q', '-m', 'chore: init'], projectPath)
-
   const branch = values.ui ? 'docs-ui' : 'docs'
-  log(`接入 bmo（${branch} 分支）`)
-  run('git', ['remote', 'add', 'bmo', BMO_REPO], projectPath)
-  run('git', ['fetch', 'bmo', branch], projectPath)
-  // 摘 bmo 模板分支在它自己 init 之后的全部提交；只摘 bmo/docs 会漏掉前面的提交
-  const root = output('git', ['rev-list', '--max-parents=0', `bmo/${branch}`], projectPath).split('\n')[0]
-  cherryPick(['cherry-pick', `${root}..bmo/${branch}`], projectPath)
+
+  if (values.resume) {
+    if (!existsSync(join(projectPath, '.git')))
+      fail(`--resume 要接着已经开始的项目，但 ${projectPath} 不是 git 项目`)
+    const unresolved = output('git', ['diff', '--name-only', '--diff-filter=U'], projectPath)
+    if (unresolved)
+      fail(`还有没解决的冲突：${unresolved.split('\n').join('、')}，解决后 git add 再 --resume`)
+    step = 1
+    log(`接着接入 bmo（${branch} 分支）`)
+    // 摘到一半就继续；已经摘完时 --continue 会报“没有进行中的 cherry-pick”，进冲突检查后直接返回
+    cherryPick(['-c', 'core.editor=true', 'cherry-pick', '--continue'], projectPath)
+  }
+  else {
+    if (existsSync(projectPath))
+      fail(`目录已存在：${projectPath}（接入 bmo 冲突后继续，加 --resume）`)
+    log(`从模板创建项目 ${name}`)
+    mkdirSync(projectPath, { recursive: true })
+    createFromTemplate(name, projectPath)
+    run('git', ['init', '--initial-branch=master'], projectPath)
+    run('git', ['add', '.'], projectPath)
+    run('git', ['commit', '-q', '-m', 'chore: init'], projectPath)
+
+    log(`接入 bmo（${branch} 分支）`)
+    run('git', ['remote', 'add', 'bmo', BMO_REPO], projectPath)
+    run('git', ['fetch', 'bmo', branch], projectPath)
+    // 摘 bmo 模板分支在它自己 init 之后的全部提交；只摘 bmo/docs 会漏掉前面的提交
+    const root = output('git', ['rev-list', '--max-parents=0', `bmo/${branch}`], projectPath).split('\n')[0]
+    cherryPick(['cherry-pick', `${root}..bmo/${branch}`], projectPath)
+  }
 
   log('拉取 bmo 并更新到最新（pnpm bmo:init）')
   ensureBmoScripts(join(projectPath, 'package.json'))

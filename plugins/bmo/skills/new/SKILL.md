@@ -34,7 +34,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/new-project.mjs" --name <项目名称> --tit
 
 出错时：
 
-- `cherry-pick 有冲突`（package.json 以外的文件）：打开冲突文件，两边改动都保留，同一处以模板（HEAD）为准、补上 bmo 新增的内容；`git add` 后 `git -c core.editor=true cherry-pick --continue`，再在项目目录执行 `pnpm bmo:init`、`pnpm install`，最后按上面设置病种。
+- `接入 bmo 时有冲突`（package.json 以外的文件，package.json 会自动合并）：**能继续接入**。打开冲突文件，两边改动都保留，同一处以模板（HEAD）为准、补上 bmo 新增的内容；`git add` 这些文件后，**用同样的参数加 `--resume` 再运行一次脚本**（不要手动 `cherry-pick --continue`），它会接着摘完剩下的提交（再冲突就重复这一步），并做完后续所有步骤。
+  完成后告诉用户：“这次接入时模板和 bmo 有冲突，已经处理好了，不影响使用；请转告 bmo 维护者更新 docs / docs-ui 分支，免得下次建项目再遇到。”
 - 拉代码提示没有权限：回到 doctor 第 3 步。
 - `pnpm install` 失败：看报错，多半是网络或 Node 版本问题，修好后在项目目录重跑 `pnpm install`。
 
