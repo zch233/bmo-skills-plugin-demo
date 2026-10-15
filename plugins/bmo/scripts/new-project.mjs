@@ -152,7 +152,8 @@ function cherryPick(args, cwd) {
     if (conflicts.some(file => file !== 'package.json')) {
       fail([
         `接入 bmo 时有冲突：${conflicts.join('、')}（项目在 ${cwd}）。`,
-        '解决：两边改动都保留，同一处以模板（HEAD）为准、补上 bmo 新增的内容；解决完 git add 这些文件，',
+        '解决：两边改动都保留，同一处以模板（HEAD）为准、补上 bmo 新增的内容；bmo 在这个文件里必须保留什么，',
+        '对照 bmo README「接入方式2」里对应的那一步（git fetch bmo master && git show bmo/master:README.md）。解决完 git add 这些文件，',
         '然后用同样的参数加 --resume 再运行本脚本，会接着做完剩下的步骤（不要手动 git cherry-pick --continue）。',
         '这说明 bmo 的模板分支和最新模板有冲突，请转告 bmo 维护者更新 docs / docs-ui 分支。',
       ].join('\n'))
