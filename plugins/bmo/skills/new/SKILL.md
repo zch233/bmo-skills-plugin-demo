@@ -70,7 +70,7 @@ node packages/bmo-business-pc/scripts/bmo-add.mjs <模块1> <模块2> ...
    > /add-dir <项目绝对路径>
    > ```
    >
-   > 以后想在新窗口打开这个项目，进项目目录再启动就行：`cd <项目绝对路径>` 然后 `claude`。
+   > 以后打开这个项目：桌面应用新建会话时选择项目文件夹；终端里 `cd <项目绝对路径>` 然后 `claude`。
 
    用户输入后，后续要求按项目 skill 来处理。用户如果是在项目目录里启动的当前窗口（工作目录就是项目），改成让他输入 `/reload-skills`。
    `/add-dir` 只加载 skill，项目里禁止修改 bmo 子模块的防护配置要在项目目录里启动才生效：在这个窗口里继续做时你自己也要遵守，不要改 `packages/bmo-business-pc`。

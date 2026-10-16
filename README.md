@@ -11,23 +11,28 @@
 
 ## 安装
 
-前提：已安装 [Claude Code](https://code.claude.com) 和 [Git](https://git-scm.com/downloads)（Windows 版 Claude Code 本身也依赖 Git）。
+- **桌面应用**（Windows / Mac）：切到 **Code** 标签页（不是 Cowork），新建会话，文件夹选一个本机目录，把下面这段原样发送（桌面应用没有 `/plugin` 命令，让 AI 用命令行装）：
 
-在 Claude Code 里依次输入：
+  > 帮我安装 bmo 项目助手插件，要真正执行安装命令，不要只改 settings.json：
+  > 1. 依次运行 `claude plugin marketplace add https://gitee.com/z-null/bmo-skills-plugin-demo.git` 和 `claude plugin install bmo@gupo-bmo`。命令行里找不到 `claude` 的话，用 Claude 桌面应用安装目录里自带的 claude 程序执行；没有 git 就先帮我装上 git（Windows 用 winget、Mac 用 xcode-select）。
+  > 2. 在用户目录 `.claude/settings.json` 的 `extraKnownMarketplaces.gupo-bmo` 里加上 `"autoUpdate": true`，以后自动更新。
+  > 3. 确认用户目录 `.claude/plugins/installed_plugins.json` 里有 `bmo@gupo-bmo`，然后提醒我新建会话。
 
-```
-/plugin marketplace add https://gitee.com/z-null/bmo-skills-plugin-demo.git
-/plugin install bmo@gupo-bmo
-```
+- **终端**（Claude Code CLI，需要已装 git）：
 
-然后**打开自动更新**：输入 `/plugin` → Marketplaces → 选 `gupo-bmo` → Enable auto-update。不开的话插件会一直停在安装时的版本。
+  ```
+  /plugin marketplace add https://gitee.com/z-null/bmo-skills-plugin-demo.git
+  /plugin install bmo@gupo-bmo
+  ```
 
-装好后直接说“帮我检查环境”或“帮我创建一个新项目”即可，也可以输入 `/bmo:doctor`、`/bmo:new`。
+  再在 `/plugin` → Marketplaces → 选 `gupo-bmo` → Enable auto-update 打开自动更新。
+
+装好后**新建一个会话**，直接说“帮我检查环境”或“帮我创建一个新项目”即可，也可以输入 `/bmo:doctor`、`/bmo:new`。
 
 ## 更新
 
-- 开了自动更新：Claude Code 后台自动拉新版本。
-- 没开：输入 `/plugin marketplace update gupo-bmo`。
+- 开了自动更新：后台自动拉新版本。
+- 没开：桌面应用对 AI 说“帮我更新 bmo 插件”（执行 `claude plugin marketplace update gupo-bmo`）；终端输入 `/plugin marketplace update gupo-bmo`。
 
 ## 维护
 
