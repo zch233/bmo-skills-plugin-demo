@@ -50,6 +50,7 @@ const BMO_SCRIPTS = {
   'bmo:disease': 'node packages/bmo-business-pc/scripts/bmo-disease.mjs',
   'bmo:login': 'node packages/bmo-business-pc/scripts/bmo-login.mjs',
   'bmo:release': 'node packages/bmo-business-pc/scripts/bmo-release.mjs',
+  'bmo:dev': 'node packages/bmo-business-pc/scripts/bmo-dev.mjs',
 }
 
 let step = 0
