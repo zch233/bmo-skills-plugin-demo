@@ -54,13 +54,13 @@ node packages/bmo-business-pc/scripts/bmo-add.mjs <模块1> <模块2> ...
 ## 5. 启动并交付
 
 1. 在项目目录后台启动 `pnpm bmo:dev`（没有这个命令时用 `node packages/bmo-business-pc/scripts/bmo-dev.mjs`）：它会先避开已被占用的端口（包括 WSL 里开着的服务，Vite 自己检测不出来）再启动开发服务。从输出里读到本地地址和端口，**以输出为准**。
-2. **登录打开**：项目接了真实接口，直接打开本地地址会跳到统一登录页。按项目里 `.claude/skills/bmo-open/SKILL.md` 的第 3 步做：打开 `https://demo.group-ds.com/bmo-auth-pc/#/`，把那一步里给用户的说明**原样**发给用户（包括加粗的“手速一定要快”和链接示例）。项目里没有那个文件时，至少要告诉用户：登录后在「中台应用」里点任意一个应用，**⚠️ 页面一打开就马上复制地址栏链接，手速一定要快**，对的链接很长，形如 `https://demo.group-ds.com/bmo-business-pc/#/auth?system_code=xxx&org_id=xxx&arc_code=xxx&token=eyJ0eXAi...`。拿到后在项目目录运行：
+2. **登录打开**：项目接了真实接口，直接打开本地地址会跳到统一登录页。按项目里 `.claude/skills/bmo-open/SKILL.md` 的第 3 步做：打开 `https://demo.group-ds.com/bmo-auth-pc/#/`，把那一步里给用户的说明**原样**发给用户（包括加粗的“手速一定要快”和“链接不用发给我”）。项目里没有那个文件时，至少要告诉用户：登录后在「中台应用」里点任意一个应用，**⚠️ 页面一打开就马上复制地址栏链接，手速一定要快**，复制好回一句“复制好了”，**链接不用发过来**（里面有登录凭证）。用户说复制好了，在项目目录运行：
 
    ```bash
-   node packages/bmo-business-pc/scripts/bmo-login.mjs "<用户粘贴的链接>" --port <端口> --open
+   node packages/bmo-business-pc/scripts/bmo-login.mjs --clipboard --port <端口> --open
    ```
 
-   脚本会把链接换成本地地址并在浏览器打开，有效期内之后直接打开 `http://localhost:<端口>/` 即可。链接里带登录凭证，不要写进文件。
+   脚本自己读剪贴板，把链接换成本地地址并在浏览器打开，输出里不带 token；有效期内之后直接打开 `http://localhost:<端口>/` 即可。报复制晚了就请用户重新点开应用、马上复制。用户还是把链接贴进了对话：照常用 `bmo-login.mjs "<链接>" --port <端口> --open` 打开，回复里不复述链接，提醒下次不用发。链接不要写进任何文件。
 3. 告诉用户项目位置、系统名称、病种（三项）、已接入的模块。
 4. **加载项目自带的功能**：项目自带的 skill（加模块、做页面、打开项目、改病种、提交、发版）在项目的 `.claude/skills/` 里，当前会话启动时项目还不存在，所以还没加载。**不用让用户输入任何命令**：会话开在项目的上级目录时，Claude 第一次读项目子目录里的文件，那个目录的 skill 就会自动加载并在本会话一直可用。所以你用读文件的工具读一下项目里的 `.claude/skills/bmo-add/SKILL.md`（或项目里任意一个文件）即可，之后 `/` 菜单里能看到（可能带项目文件夹名前缀，如 `/<项目文件夹名>:bmo-add`）。
    不要让用户输入 `/add-dir`：桌面应用里没有这个命令。
