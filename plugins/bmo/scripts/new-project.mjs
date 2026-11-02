@@ -228,12 +228,12 @@ function ensureBmoScripts(pkgPath) {
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + (text.endsWith('\n') ? '\n' : ''))
 }
 
-/** README 里「接入方式2」到「END」之间，是 bmo 要求宿主做的改动 */
+/** README 里「接入方式2」这一节（到下一个二级标题为止，旧版 README 是「## END」），是 bmo 要求宿主做的改动 */
 function integrationSection(cwd, rev) {
   try {
     const readme = output('git', ['-C', 'packages/bmo-business-pc', 'show', `${rev}:README.md`], cwd)
     const start = readme.indexOf('## 接入方式2')
-    const end = readme.indexOf('## END', start)
+    const end = readme.indexOf('\n## ', start + 1)
     return start < 0 ? null : readme.slice(start, end < 0 ? undefined : end)
   }
   catch {
