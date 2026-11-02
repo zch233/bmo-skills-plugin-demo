@@ -56,8 +56,16 @@ const BMO_SCRIPTS = {
 let step = 0
 const TOTAL = values['skip-install'] ? 4 : 5
 const log = message => console.log(`\n[${++step}/${TOTAL}] ${message}`)
-const run = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' })
-const output = (cmd, args, cwd) => execFileSync(cmd, args, { cwd, encoding: 'utf8', shell: process.platform === 'win32' }).trim()
+// Windows 上 pnpm 是 .cmd，要走 shell 才能执行；走 shell 时参数会原样拼成一行命令，
+// 带空格的参数（如提交信息 "chore: init"）必须自己加引号，否则会被拆开。git 是 exe，不走 shell
+const IS_WIN = process.platform === 'win32'
+const quoteForCmd = arg => /[\s"&|<>^()%!]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
+function exec(cmd, args, options) {
+  const shell = IS_WIN && cmd !== 'git'
+  return execFileSync(cmd, shell ? args.map(quoteForCmd) : args, { ...options, shell })
+}
+const run = (cmd, args, cwd) => exec(cmd, args, { cwd, stdio: 'inherit' })
+const output = (cmd, args, cwd) => exec(cmd, args, { cwd, encoding: 'utf8' }).trim()
 
 function fail(message) {
   console.error(`\n✖ ${message}`)
@@ -97,12 +105,17 @@ function createFromTemplate(name, projectPath) {
     pkg.version = '0.1.0'
     pkg.dependencies['@gupo-admin/components'] = compVersion
     pkg.devDependencies['@gupo-admin/cli'] = cliVersion
-    pkg.devDependencies['@gupo-admin/skills'] = compVersion
-    pkg.scripts ??= {}
-    if (!pkg.scripts.postinstall)
-      pkg.scripts.postinstall = 'gupo-admin skills sync --silent || true'
-    else if (!pkg.scripts.postinstall.includes('skills sync'))
-      pkg.scripts.postinstall = `${pkg.scripts.postinstall} && gupo-admin skills sync --silent || true`
+    // 旧版 cli（0.3.1 及以前）还会注入 AI Starter：@gupo-admin/skills、postinstall 同步、ai-starter 目录；
+    // 0.3.2 起移除了（改成用户级的 @gupo-admin/ai-rag），模板里还有 ai-starter 才照旧做
+    const aiStarter = join(temp, 'packages/cli/templates/ai-starter')
+    if (existsSync(aiStarter)) {
+      pkg.devDependencies['@gupo-admin/skills'] = compVersion
+      pkg.scripts ??= {}
+      if (!pkg.scripts.postinstall)
+        pkg.scripts.postinstall = 'gupo-admin skills sync --silent || true'
+      else if (!pkg.scripts.postinstall.includes('skills sync'))
+        pkg.scripts.postinstall = `${pkg.scripts.postinstall} && gupo-admin skills sync --silent || true`
+    }
     for (const key in catalog) {
       if (pkg.dependencies[key])
         pkg.dependencies[key] = catalog[key]
@@ -113,28 +126,40 @@ function createFromTemplate(name, projectPath) {
 
     const envPath = join(projectPath, 'env/.env')
     writeFileSync(envPath, readFileSync(envPath, 'utf8').replace(/VITE_APP_STORAGE_KEY=(.*)/, `VITE_APP_STORAGE_KEY=${name}`))
-    cpSync(join(temp, 'packages/cli/templates/ai-starter'), projectPath, { recursive: true })
+    if (existsSync(aiStarter))
+      cpSync(aiStarter, projectPath, { recursive: true })
   }
   finally {
     rmSync(temp, { recursive: true, force: true })
   }
 }
 
-/** 两边都有的字段以模板（ours）为准，只把 bmo 分支（theirs）新增的字段补进来 */
-function mergePackageJson(ours, theirs) {
+const isObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
+
+/**
+ * 两边都有的字段以模板（ours）为准，只把 bmo 分支（theirs）新增的字段补进来。
+ * base 是 bmo 分支摘的提交之前的版本：base 里有、模板里没有的字段是模板删掉的（如 cli 0.3.2 去掉的
+ * @gupo-admin/skills、postinstall），不要再补回来
+ */
+function mergePackageJson(ours, theirs, base = {}) {
   const merged = structuredClone(ours)
   for (const [key, value] of Object.entries(theirs)) {
-    if (!(key in merged))
-      merged[key] = value
-    else if (value && typeof value === 'object' && !Array.isArray(value) && typeof merged[key] === 'object')
-      merged[key] = mergePackageJson(merged[key], value)
+    if (!(key in merged)) {
+      if (!(key in (base ?? {})))
+        merged[key] = value
+    }
+    else if (isObject(value) && isObject(merged[key])) {
+      merged[key] = mergePackageJson(merged[key], value, isObject(base?.[key]) ? base[key] : {})
+    }
   }
   return merged
 }
 
 /**
  * bmo 模板分支是在旧模板上做的，模板迭代后可能冲突。bmo 分支已经把 bmo:* 命令放在 scripts 中间（放末尾会和 cli 追加的
- * postinstall 撞同一行），一般不会冲突；万一 package.json 冲突就按 JSON 合并兜底，其他文件冲突停下来交给人/AI。
+ * postinstall 撞同一行），一般不会冲突；万一 package.json 冲突就按 JSON 合并兜底；一边删了文件、另一边改了的
+ * （如 cli 0.3.2 去掉了 AI Starter 的 AGENTS.md / CLAUDE.md，docs-ui 改过它们；docs-ui 删掉的 Demo 页面模板又改了），
+ * 按删除处理；其他文件冲突停下来交给人/AI。
  */
 function cherryPick(args, cwd) {
   // 摘到一半（有 sequencer 或 CHERRY_PICK_HEAD）就一直处理到摘完：package.json 冲突自动合并，
@@ -149,6 +174,14 @@ function cherryPick(args, cwd) {
     catch {}
     if (!inProgress())
       return
+    // 一边删、一边改（DU：模板删了；UD：bmo 删了）按删除处理
+    const deleted = output('git', ['status', '--porcelain'], cwd).split('\n')
+      .filter(line => /^(?:DU|UD) /.test(line))
+      .map(line => line.slice(3))
+    if (deleted.length) {
+      run('git', ['rm', '-q', '--', ...deleted], cwd)
+      console.log(`以下文件一边删了、一边改了，按删除处理：${deleted.join('、')}`)
+    }
     const conflicts = output('git', ['diff', '--name-only', '--diff-filter=U'], cwd).split('\n').filter(Boolean)
     if (conflicts.some(file => file !== 'package.json')) {
       fail([
@@ -162,7 +195,12 @@ function cherryPick(args, cwd) {
     if (conflicts.length) {
       const ours = JSON.parse(output('git', ['show', ':2:package.json'], cwd))
       const theirs = JSON.parse(output('git', ['show', ':3:package.json'], cwd))
-      writeFileSync(join(cwd, 'package.json'), `${JSON.stringify(mergePackageJson(ours, theirs), null, 2)}\n`)
+      let base = {}
+      try {
+        base = JSON.parse(output('git', ['show', ':1:package.json'], cwd))
+      }
+      catch {}
+      writeFileSync(join(cwd, 'package.json'), `${JSON.stringify(mergePackageJson(ours, theirs, base), null, 2)}\n`)
       run('git', ['add', 'package.json'], cwd)
       console.log('package.json 冲突已按 JSON 合并（模板字段优先，补上 bmo 新增的命令和依赖）')
     }
