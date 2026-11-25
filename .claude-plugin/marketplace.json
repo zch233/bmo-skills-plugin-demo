@@ -1,6 +1,6 @@
 {
   "name": "gupo-bmo",
-  "description": "古珀 bmo 中台的 Claude Code 插件",
+  "description": "古珀 AI 插件 / skills：bmo 项目助手、协作区接入（Claude Code 走插件市场，其他 AI 工具用 scripts/install-skills.mjs 安装）",
   "owner": {
     "name": "GUPO"
   },
@@ -8,7 +8,12 @@
     {
       "name": "bmo",
       "source": "./plugins/bmo",
-      "description": "检查开发环境、新建接入 bmo 的项目（/bmo:doctor、/bmo:new）"
+      "description": "检查开发环境、新建接入 bmo 的项目（bmo-doctor、bmo-new）"
+    },
+    {
+      "name": "ai-collab",
+      "source": "./plugins/ai-collab",
+      "description": "接入古珀协作区：环境变量 + 项目 .ai-collab 链接 + AGENTS.md 区块（ai-collab-setup、ai-collab-doctor）"
     }
   ]
 }

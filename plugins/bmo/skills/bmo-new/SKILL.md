@@ -1,15 +1,17 @@
 ---
-name: new
+name: bmo-new
 description: 新建一个接入 bmo 中台的前端项目：下载古珀模板、接入 bmo、设置病种、安装依赖、挑选功能模块、启动并登录打开。用户说“帮我创建模板/新建项目/搭一个新项目”时使用。
 ---
 
 # 新建 bmo 项目
 
+先更新：本 skill 目录（本文件所在目录）在 git 工作副本里时，运行 `git -C <本 skill 目录> pull --ff-only`；拉到了新内容就重新读一遍本文件再开始。失败（不是 git 仓库、没网、有本地改动）就忽略，继续往下做。
+
 使用者多半是产品同学：用业务语言沟通，只问必须他决定的事。
 
 ## 1. 环境
 
-先按 /bmo:doctor 的检查表快速检查（Git、Git 用户信息、Node ≥ 20、pnpm ≥ 9.10、codeup SSH 权限）。有任何一项不满足，先按 doctor 的流程修好再继续。
+先按 bmo-doctor（本 skill 旁边的 `../bmo-doctor/SKILL.md`）的检查表快速检查（Git、Git 用户信息、Node ≥ 20、pnpm ≥ 9.10、codeup SSH 权限）。有任何一项不满足，先按 bmo-doctor 的流程修好再继续。
 
 ## 2. 问清四件事（一次问完）
 
@@ -20,10 +22,10 @@ description: 新建一个接入 bmo 中台的前端项目：下载古珀模板�
 
 ## 3. 创建
 
-运行（耗时几分钟，用较长的超时时间）：
+运行本 skill 目录下的 `scripts/new-project.mjs`（写成绝对路径；耗时几分钟，用较长的超时时间）：
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/new-project.mjs" --name <项目名称> --title "<系统名称>" --dir <父目录> [--ui] [--disease "<病种>"]
+node "<本 skill 目录>/scripts/new-project.mjs" --name <项目名称> --title "<系统名称>" --dir <父目录> [--ui] [--disease "<病种>"]
 ```
 
 `--disease` 写三项（如 `--disease "慢病全科 CHRONIC CHRONIC_ALL"`）；用户默认糖尿病时不传。
@@ -38,7 +40,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/new-project.mjs" --name <项目名称> --tit
 
 - `接入 bmo 时有冲突`（package.json 以外的文件，package.json 会自动合并）：**能继续接入**。打开冲突文件，两边改动都保留，同一处以模板（HEAD）为准、补上 bmo 新增的内容。bmo 在这个文件里**必须保留什么，以 bmo README 的「接入方式2」为准**（`git fetch bmo master && git show bmo/master:README.md`）：冲突文件基本都对应其中某一步，如 `stores/permission.ts` 是第 7 步的 glob 和 `isBmoBusiness` 分流、`src/router/index.ts` 是第 6 步的 `businessStore.init` 和第 7 步的 `bmoRoutes`、`vite.config.ts` 是第 2 步的别名和代理、`env/.env` 是第 5 步的接口地址、`src/utils/request/interceptors/handle-auth.ts` 是第 6.2 步的 `handleBmoAuth`，解决后逐条核对那一步要求的内容都还在；`git add` 这些文件后，**用同样的参数加 `--resume` 再运行一次脚本**（不要手动 `cherry-pick --continue`），它会接着摘完剩下的提交（再冲突就重复这一步），并做完后续所有步骤。
   完成后告诉用户：“这次接入时模板和 bmo 有冲突，已经处理好了，不影响使用；请转告 bmo 维护者更新 docs / docs-ui 分支，免得下次建项目再遇到。”
-- 拉代码提示没有权限：回到 doctor 第 3 步。
+- 拉代码提示没有权限：回到 bmo-doctor 第 3 步。
 - `pnpm install` 失败：看报错，多半是网络或 Node 版本问题，修好后在项目目录重跑 `pnpm install`。
 
 ## 4. 挑功能模块
@@ -62,12 +64,14 @@ node packages/bmo-business-pc/scripts/bmo-add.mjs <模块1> <模块2> ...
 
    脚本自己读剪贴板，把链接换成本地地址并在浏览器打开，输出里不带 token；有效期内之后直接打开 `http://localhost:<端口>/` 即可。报剪贴板里没有登录参数，就重新打开上面带 `?debug=1` 的地址，请用户再点一次应用；还不行请用户点开应用后马上手动复制地址栏。用户还是把链接贴进了对话：照常用 `bmo-login.mjs "<链接>" --port <端口> --open` 打开，回复里不复述链接，提醒下次不用发。链接不要写进任何文件。
 3. 告诉用户项目位置、系统名称、病种（三项）、已接入的模块。
-4. **加载项目自带的功能**：项目自带的 skill（加模块、做页面、打开项目、改病种、提交、发版）在项目的 `.claude/skills/` 里，当前会话启动时项目还不存在，所以还没加载。**不用让用户输入任何命令**：会话开在项目的上级目录时，Claude 第一次读项目子目录里的文件，那个目录的 skill 就会自动加载并在本会话一直可用。所以你用读文件的工具读一下项目里的 `.claude/skills/bmo-add/SKILL.md`（或项目里任意一个文件）即可，之后 `/` 菜单里能看到（可能带项目文件夹名前缀，如 `/<项目文件夹名>:bmo-add`）。
-   不要让用户输入 `/add-dir`：桌面应用里没有这个命令。
-   交付时告诉用户：“项目自带的助手功能已经可以用了。以后打开这个项目：桌面应用新建会话时选择项目文件夹；终端里 `cd <项目绝对路径>` 后运行 `claude`。”
-   项目里“禁止修改 bmo 子模块”的防护配置要在项目文件夹里新开会话才生效：在这个会话里继续做时你自己也要遵守，不要改 `packages/bmo-business-pc`。
+4. **加载项目自带的功能**：项目自带的 skill（加模块、做页面、打开项目、改病种、提交、发版）在项目的 `.claude/skills/` 里，当前会话启动时项目还不存在，所以还没加载。
+   - **Claude Code**：**不用让用户输入任何命令**：会话开在项目的上级目录时，Claude 第一次读项目子目录里的文件，那个目录的 skill 就会自动加载并在本会话一直可用。所以你用读文件的工具读一下项目里的 `.claude/skills/bmo-add/SKILL.md`（或项目里任意一个文件）即可，之后 `/` 菜单里能看到（可能带项目文件夹名前缀，如 `/<项目文件夹名>:bmo-add`）。不要让用户输入 `/add-dir`：桌面应用里没有这个命令。
+   - **其他工具**（Codex、Cursor、Grok、WorkBuddy、Qoder）：不一定会读项目里的 `.claude/skills/`，本会话里需要时直接读项目里 `.claude/skills/<名字>/SKILL.md` 按它做即可。
 
-   **之后的提醒**：用户在这个会话里接着提项目上的要求，而你可用的 skill 里还没有 `bmo-add` / `bmo-compose` 这些项目 skill 时，先读一下项目里的一个文件把它们加载上，再按项目 skill 处理；还是加载不上，提醒用户一次：
+   交付时告诉用户：“项目自带的助手功能已经可以用了。以后打开这个项目：在 AI 工具里新建会话 / 打开文件夹时选择项目文件夹（`<项目绝对路径>`）；Claude Code 终端里是 `cd <项目绝对路径>` 后运行 `claude`。”
+   项目里“禁止修改 bmo 子模块”的防护配置（Claude Code 的 hook）要在项目文件夹里新开会话才生效：在这个会话里继续做时你自己也要遵守，不要改 `packages/bmo-business-pc`。
 
-   > 项目自带的助手功能没加载上，在项目里新开一个会话就有了：桌面应用新建会话时选择项目文件夹（`<项目绝对路径>`）；终端里 `cd <项目绝对路径>` 后运行 `claude`。不换也行，我先按通用方式帮你做。
+   **之后的提醒**：用户在这个会话里接着提项目上的要求，而你可用的 skill 里还没有 `bmo-add` / `bmo-compose` 这些项目 skill 时，先读一下项目里的一个文件把它们加载上（其他工具直接读对应的 SKILL.md），再按项目 skill 处理；还是加载不上，提醒用户一次：
+
+   > 项目自带的助手功能没加载上，在项目里新开一个会话就有了：在 AI 工具里新建会话时选择项目文件夹（`<项目绝对路径>`）；Claude Code 终端里是 `cd <项目绝对路径>` 后运行 `claude`。不换也行，我先按通用方式帮你做。
 5. 不要替用户推送代码。之后要保存到公司仓库、发版时，在项目里说“关联仓库”“发版”即可（项目自带 bmo-git、bmo-release）：仓库和发版流水线要先请**运维**建好、配好。

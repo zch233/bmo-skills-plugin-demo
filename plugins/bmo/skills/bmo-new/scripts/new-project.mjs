@@ -269,7 +269,7 @@ function main() {
     fail('请用 --name 指定项目名称（字母、数字、- _ .）')
   const projectPath = resolve(values.dir, name)
   if (!output('git', ['config', 'user.name']) || !output('git', ['config', 'user.email']))
-    fail('git 还没配置 user.name / user.email，先运行 /bmo:doctor')
+    fail('git 还没配置 user.name / user.email，先运行 bmo-doctor（对 AI 说“帮我检查环境”）')
   const branch = values.ui ? 'docs-ui' : 'docs'
 
   if (values.resume) {

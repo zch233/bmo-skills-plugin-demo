@@ -1,0 +1,10 @@
+{
+  "name": "ai-collab",
+  "displayName": "协作区接入",
+  "description": "古珀 AI skills：把项目接入古珀协作区（接口契约、需求、设计规范、协作流程）：ai-collab-setup 接入，ai-collab-doctor 检查",
+  "author": {
+    "name": "GUPO"
+  },
+  "repository": "https://gitee.com/z-null/bmo-skills-plugin-demo",
+  "keywords": ["ai-collab", "gupo", "contract"]
+}
