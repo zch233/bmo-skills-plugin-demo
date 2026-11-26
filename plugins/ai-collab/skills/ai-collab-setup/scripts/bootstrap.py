@@ -755,16 +755,38 @@ def identity_set(collab):
 # --------------------------------------------------------------------------- 5. 收尾
 
 
-def check_dws():
-    if not shutil.which("dws"):
-        out(INFO, "没有钉钉 CLI dws：不影响接入；要发钉钉通知的（前端、后端、测试）按协作区 MIGRATION.md 安装后运行 dws auth login")
-        return
+def dws_logged_in():
     code, so, se = run(["dws", "auth", "status", "--format", "json"], timeout=30)
     txt = so + se
-    if re.search(r'"authenticated"\s*:\s*true', txt) and re.search(r'"token_valid"\s*:\s*true', txt):
+    return bool(re.search(r'"authenticated"\s*:\s*true', txt) and re.search(r'"token_valid"\s*:\s*true', txt))
+
+
+def check_dws(term, args):
+    """钉钉 CLI 登录检查。登录有效期约一个月，过期很常见：交互终端里直接问要不要现在登录（会打开浏览器扫码），
+    AI 工具里没法扫码，只提示用户自己在终端运行。测试、产品不发钉钉的可以跳过。"""
+    dws = shutil.which("dws")
+    if not dws:
+        out(INFO, "没有钉钉 CLI dws：不影响接入；要发钉钉通知的（前端、后端、测试）按协作区 MIGRATION.md 安装后运行 dws auth login")
+        return
+    if dws_logged_in():
+        out(OK, "钉钉 CLI dws 已登录")
+        return
+    out(WARN, "钉钉 CLI dws 未登录或登录过期（有效期约一个月）：不影响接入，只是发不了钉钉通知")
+    if not term.ok or args.yes:
+        out(INFO, "要发钉钉通知的（前端、后端、测试），在自己的终端运行 dws auth login 扫码登录（AI 工具里没法扫码）")
+        return
+    if not term.confirm("现在登录钉钉吗？会打开浏览器扫码（测试、产品不发钉钉的可以选 n）", True):
+        out(INFO, "跳过；以后要发钉钉时运行 dws auth login")
+        return
+    try:
+        subprocess.run([dws, "auth", "login"], stdin=term.fin, stdout=term.fout, stderr=term.fout)
+    except (OSError, KeyboardInterrupt) as e:
+        out(WARN, f"登录没完成（{e}）：稍后在终端运行 dws auth login")
+        return
+    if dws_logged_in():
         out(OK, "钉钉 CLI dws 已登录")
     else:
-        out(WARN, "钉钉 CLI dws 未登录或登录过期：要发钉钉通知的运行 dws auth login")
+        out(WARN, "还是没登录上：稍后在终端运行 dws auth login，再 dws auth status 看看")
 
 
 # --------------------------------------------------------------------------- 主流程
@@ -944,7 +966,7 @@ def main():
             out(WARN, "git 用户名没设置：协作区认不出你是谁。运行 git config --global user.name \"<钉钉姓名>\"")
             if not term.ok:
                 exit_code = EXIT_ASK
-    check_dws()
+    check_dws(term, args)
 
     print("\n== 接好了 ==", flush=True)
     if is_git:
