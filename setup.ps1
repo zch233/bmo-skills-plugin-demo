@@ -5,7 +5,8 @@
 #   $env:GUPO_SETUP_ARGS = '--type tester'; irm https://gitee.com/z-null/bmo-skills-plugin-demo/raw/main/setup.ps1 | iex
 #
 # 本文件是薄壳，只做三件事，其余逻辑都在 bootstrap.py：
-#   1. 检查 git、Python 3.8+，缺了用 winget 装（Git.Git / Python.Python.3.12），装不了就说明去哪下载
+#   1. 检查 git、Python 3.8+（先按注册表刷新当前会话的 PATH 再找），缺了用 winget 装（Git.Git / Python.Python.3.12），
+#      装不了就说明去哪下载
 #   2. 把插件仓库 https 克隆到 ~\.gupo\skills\bmo-skills-plugin-demo，已有就 git pull --ff-only
 #   3. 运行仓库里的 plugins\ai-collab\skills\ai-collab-setup\scripts\bootstrap.py，参数原样透传
 #
@@ -38,8 +39,20 @@ function Invoke-GupoSetupSteps {
     $hasWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 
     function Update-SessionPath {
-        # winget 装完只改了注册表，把新的 PATH 读进当前会话，省得重开窗口
-        $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+        # 把注册表里的 PATH（Machine + User）补进当前会话：winget 装完只改了注册表；AI 工具的进程也可能是装 Python 之前启动的，
+        # PATH 还是旧的。只追加当前会话没有的目录，不删、不调顺序（当前会话里别人加的目录保留）
+        $have = @{}
+        foreach ($p in ($env:Path -split ';')) { if ($p) { $have[$p.TrimEnd('\').ToLower()] = $true } }
+        $add = @()
+        foreach ($scope in 'Machine', 'User') {
+            foreach ($p in ([Environment]::GetEnvironmentVariable('Path', $scope) -split ';')) {
+                if (-not $p) { continue }
+                $p = [Environment]::ExpandEnvironmentVariables($p)
+                $k = $p.TrimEnd('\').ToLower()
+                if (-not $have.ContainsKey($k)) { $have[$k] = $true; $add += $p }
+            }
+        }
+        if ($add.Count) { $env:Path = (@($env:Path) + $add | Where-Object { $_ }) -join ';' }
     }
 
     function Test-Git {
@@ -64,7 +77,8 @@ function Invoke-GupoSetupSteps {
 
     Write-Host '== 准备：git、Python、插件仓库 =='
 
-    # 1. git
+    # 1. git（先按注册表刷新一次 PATH 再判断：装过但当前进程 PATH 是旧的，就不用再装）
+    if (-not (Test-Git)) { Update-SessionPath }
     if (-not (Test-Git)) {
         if ($hasWinget) {
             Write-Host '[INFO] 没有 git，用 winget 安装 Git.Git ...'
@@ -79,8 +93,12 @@ function Invoke-GupoSetupSteps {
     }
     Write-Host "[OK]   $(& git --version)"
 
-    # 2. Python 3.8+
+    # 2. Python 3.8+（同上：先刷新 PATH 再找一次 py / python，找到就不装）
     $py = Find-Python
+    if (-not $py) {
+        Update-SessionPath
+        $py = Find-Python
+    }
     if (-not $py -and $hasWinget) {
         Write-Host '[INFO] 没有 Python 3.8+，用 winget 安装 Python.Python.3.12 ...'
         & winget install --id Python.Python.3.12 -e --source winget --accept-package-agreements --accept-source-agreements

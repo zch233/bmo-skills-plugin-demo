@@ -7,10 +7,14 @@
 真正的接入逻辑在协作区的 skills/collab-setup/scripts/setup.py，本脚本只负责找到 / 克隆协作区、问人、调用它。
 
   1 检查环境   Python、git、项目目录（拒绝用户主目录）
-  2 找协作区   AI_COLLAB_HOME → 项目里的 .ai-collab → 项目上一级、上两级的 ai_collab / ai-collab → 常见代码目录；
-               找到就拉最新；找不到就问放哪、SSH 克隆，没权限时带着生成密钥、复制公钥、打开 codeup 设置页
+  2 找协作区   项目里的子模块 packages/ai_collab → AI_COLLAB_HOME → 项目里的 .ai-collab → 项目上一级、上两级的
+               ai_collab / ai-collab → ~/ai_collab、~/ai-collab → ~/code 等常见目录（setup.py 同一顺序）；
+               找到就拉最新（子模块跟着项目走，不拉）；找不到就让人选放哪（默认 ~/ai_collab）、SSH 克隆，
+               没权限时带着生成密钥、复制公钥、打开 codeup 设置页
   3 预览       setup.py --dry-run；认不出类型让人选，发现老项目手抄内容问要不要替换
-  4 写入       确认后正式运行 setup.py；装 skills（scripts/install-skills.mjs，要 Node 18+）
+  4 写入       确认后正式运行 setup.py（含环境变量 AI_COLLAB_HOME，以后各项目都按它找到同一份协作区）；
+               装 skills（scripts/install-skills.mjs，要 Node 18+）：插件仓库的 skill，加上协作区 skills/ 下的
+               （--source 协作区 --label ai_collab，跳过和插件重复的 collab-setup；这些也写 ~/.claude/skills）
   5 收尾       git user.name、钉钉 CLI dws 登录
 
 用法：
@@ -44,6 +48,12 @@ RAW_BASE = "https://gitee.com/z-null/bmo-skills-plugin-demo/raw/main"
 MARKET_URL = "https://gitee.com/z-null/bmo-skills-plugin-demo.git"
 SETUP_REL = Path("skills") / "collab-setup" / "scripts" / "setup.py"
 FLOW_REL = Path("skills") / "contract-flow" / "scripts" / "flow.py"
+SUBMODULE_REL = Path("packages") / "ai_collab"
+SUBMODULE_SRC = "项目里的子模块 packages/ai_collab"
+# 协作区 skills/ 装进各 AI 工具时的记录名和跳过列表（collab-setup 和插件的 ai-collab-setup 重复）
+COLLAB_SKILLS_LABEL = "ai_collab"
+COLLAB_SKILLS_SKIP = "collab-setup"
+GUPO_SKILLS_CLONE = Path.home() / ".gupo" / "skills" / "bmo-skills-plugin-demo"
 
 # 菜单顺序：最常见的「空文件夹当工作目录」放前面
 TYPE_MENU = [
@@ -143,12 +153,24 @@ def tilde(p):
 
 def quote(v):
     v = str(v)
-    if v and re.fullmatch(r"[\w@%+=:,./\\~-]+", v):
+    # 反斜杠不算安全字符：Git Bash 里重跑 curl | bash -s -- --clone-to C:\x\y 时，不加引号反斜杠会被 bash 吃掉
+    if v and re.fullmatch(r"[\w@%+=:,./~-]+", v):
         return v
     return '"' + v.replace('"', '\\"') + '"'
 
 
 # --------------------------------------------------------------------------- 交互
+
+
+def win_console(f):
+    """Windows：f 是不是真正的控制台输入（NUL、管道、文件都不算）。"""
+    try:
+        import ctypes
+        import msvcrt
+        handle = msvcrt.get_osfhandle(f.fileno())
+        return bool(ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(ctypes.c_uint())))
+    except (OSError, ValueError, AttributeError, ImportError):
+        return False
 
 
 class Term:
@@ -159,11 +181,16 @@ class Term:
         self.ok = False
         if disabled:
             return
+        if IS_WIN:
+            # Windows 没有可靠的 /dev/tty；irm | iex 在 PowerShell 里跑时 stdin 本来就是控制台。
+            # 不能只看 isatty()：Git Bash 里 setup.sh 把 stdin 换成 /dev/null（即 NUL），NUL 是字符设备，
+            # isatty() 也返回 True，一读就 EOF 直接「已取消」。要真的控制台（GetConsoleMode 成功）才算能问。
+            if win_console(sys.stdin):
+                self.fin, self.fout, self.ok = sys.stdin, sys.stdout, True
+            return
         if sys.stdin.isatty():
             self.fin, self.fout, self.ok = sys.stdin, sys.stdout, True
             return
-        if IS_WIN:
-            return   # Windows 没有可靠的 /dev/tty；irm | iex 在 PowerShell 里跑时 stdin 本来就是控制台
         try:     # curl | bash：stdin 是管道，直接读控制终端
             self.fin = open("/dev/tty", "r", encoding="utf-8", errors="replace")
             self.fout = open("/dev/tty", "w", encoding="utf-8", errors="replace")
@@ -180,10 +207,18 @@ class Term:
         return line.strip() or default
 
     def confirm(self, question, default=False):
-        ans = self.ask(f"{question} {'[Y/n]' if default else '[y/N]'} ").strip().lower()
-        if not ans:
-            return default
-        return ans in ("y", "yes", "是", "好", "确认", "对")
+        """回车取默认值；只认 y / n（及中文同义词），其他输入提示后重问，免得打错字被当成「否」。"""
+        prompt = f"{question} {'[Y/n]' if default else '[y/N]'} "
+        while True:
+            ans = self.ask(prompt).strip().lower()
+            if not ans:
+                return default
+            if ans in ("y", "yes", "是", "好", "确认", "对"):
+                return True
+            if ans in ("n", "no", "否", "不", "取消"):
+                return False
+            self.fout.write(f"  请输入 y 或 n（直接回车 = {'y' if default else 'n'}）\n")
+            self.fout.flush()
 
 
 class Pending:
@@ -278,7 +313,6 @@ def looks_like_code(root):
 def common_bases():
     h = Path.home()
     bases = [h / n for n in ("code", "code-company", "projects", "workspace", "work", "dev", "src", "Documents/code")]
-    bases.append(h)
     if IS_WIN:
         for drive in "DEC":
             bases += [Path(f"{drive}:/") / n for n in ("code", "code-company", "projects", "workspace", "work")]
@@ -287,7 +321,9 @@ def common_bases():
 
 
 def find_collab(root):
-    """按顺序找协作区，返回 (路径, 来源)；找不到返回 (None, None)。"""
+    """按顺序找协作区，返回 (路径, 来源)；找不到返回 (None, None)。和协作区 setup.py 的 find_collab 同一顺序。"""
+    if is_collab(root / SUBMODULE_REL):
+        return real(root / SUBMODULE_REL), SUBMODULE_SRC
     env = (os.environ.get(ENV_NAME) or "").strip()
     if env:
         p = Path(env).expanduser()
@@ -296,14 +332,12 @@ def find_collab(root):
         out(WARN, f"{ENV_NAME}={env} 不是协作区（缺 CHANGELOG.md / developers.json），继续找")
     if is_collab(root / ".ai-collab"):
         return real(root / ".ai-collab"), "项目里的 .ai-collab 链接"
-    places = [(root.parent, "项目上一级目录"), (root.parent.parent, "项目上两级目录")]
+    places = [(root.parent, "项目上一级目录"), (root.parent.parent, "项目上两级目录"), (Path.home(), "个人目录")]
     places += [(b, "常见位置") for b in common_bases()]
     for base, label in places:
         for name in COLLAB_DIR_NAMES:
             if is_collab(base / name):
                 return real(base / name), label
-    if is_collab(root / "packages" / "ai_collab"):
-        return real(root / "packages" / "ai_collab"), "项目里的子模块 packages/ai_collab"
     return None, None
 
 
@@ -449,12 +483,54 @@ def clone_collab(dest, repo, term, args, pending):
     return "err"
 
 
-def ask_clone_dest(term, default):
+def clone_choices(root):
+    """找不到协作区时可选的位置：[(路径, 说明)]，第一个是默认。项目就在个人目录下一级时，「上一级」和第一个相同，不重复列。"""
+    home_dest = Path.home() / COLLAB_DIR_NAMES[0]
+    choices = [(home_dest, "推荐：固定放个人目录，以后所有项目共用")]
+    parent_dest = root.parent / COLLAB_DIR_NAMES[0]
+    if not same_path(parent_dest, home_dest):
+        choices.append((parent_dest, "项目上一级目录"))
+    return choices
+
+
+def usable_dest(p):
+    """能克隆过去（不存在 / 空目录）或本来就是协作区。"""
+    try:
+        return is_collab(p) or not p.exists() or (p.is_dir() and not any(p.iterdir()))
+    except OSError:
+        return False
+
+
+def clone_question(root):
+    lines = ["协作区放哪？（本机还没有协作区，选一个位置克隆过去）"]
+    for i, (p, why) in enumerate(clone_choices(root), 1):
+        lines.append(f"{i}) {tilde(p)}（{why}）→ --clone-to {quote(tilde(p))}")
+    lines.append(f"{len(clone_choices(root)) + 1}) 自己指定路径 → --clone-to <路径>")
+    return "\n     ".join(lines)
+
+
+def ask_clone_dest(term, root):
+    choices = clone_choices(root)
+    custom = len(choices) + 1
+    print("没找到协作区，要克隆到哪？", flush=True)
+    for i, (p, why) in enumerate(choices, 1):
+        label = tilde(p) if i == 1 else f"{why} {tilde(p)}"
+        print(f"  {i}) {label}" + (f"（{why}）" if i == 1 else ""), flush=True)
+    print(f"  {custom}) 自己输入路径", flush=True)
     while True:
-        ans = term.ask(f"协作区要放在哪？直接回车用默认位置 [{default}]：", str(default))
-        p = Path(ans).expanduser()
-        p = p if p.is_absolute() else (Path.cwd() / p)
-        if is_collab(p) or not p.exists() or not any(p.iterdir()):
+        ans = term.ask(f"输入编号（直接回车 = 1）：", "1").strip()
+        if ans.isdigit() and 1 <= int(ans) <= len(choices):
+            p = choices[int(ans) - 1][0]
+        elif ans == str(custom) or not ans.isdigit():
+            typed = ans if not ans.isdigit() else term.ask("协作区放哪（完整路径）：").strip()
+            if not typed:
+                continue
+            p = Path(typed).expanduser()
+            p = p if p.is_absolute() else (Path.cwd() / p)
+        else:
+            print(f"  请输入 1–{custom}", flush=True)
+            continue
+        if usable_dest(p):
             return p
         print(f"  {p} 已存在且不是空目录，换一个位置", flush=True)
 
@@ -467,6 +543,7 @@ def locate_collab(root, args, term, pending, dry):
         if is_collab(dest):
             out(OK, f"协作区：{real(dest)}（来源：--clone-to）")
             collab = real(dest)
+            args.collab_source = SUBMODULE_SRC if same_path(dest, root / SUBMODULE_REL) else "--clone-to"
         elif dest.exists() and any(dest.iterdir()):
             out(FAIL, f"--clone-to 指向的 {dest} 不是协作区，也不是空目录，不动它")
             return None, EXIT_ERR
@@ -476,28 +553,37 @@ def locate_collab(root, args, term, pending, dry):
         collab, source = find_collab(root)
         if collab:
             out(OK, f"协作区：{collab}（来源：{source}）")
+            args.collab_source = source
         dest = None
     if collab:
+        if args.collab_source == SUBMODULE_SRC:
+            # 子模块的版本跟着项目走（项目里提交的是子模块指针），这里不拉；setup.py 也带 --no-pull
+            out(INFO, "子模块跟着项目的版本走，不在这里拉最新（要更新用 git submodule update --remote）")
+            return collab, True
         if dry:
             out(INFO, "--dry-run：不拉取，预览时只比较和远端的差异")
             return collab, False
         pull_collab(collab)
         return collab, True
 
-    default = root.parent / COLLAB_DIR_NAMES[0]
+    default = clone_choices(root)[0][0]
     repo = args.repo or os.environ.get("AI_COLLAB_REPO") or COLLAB_REPO
     if dest is None:
-        out(INFO, "没找到协作区（找过：环境变量 AI_COLLAB_HOME、项目上一级 / 上两级目录、~/code 等常见位置）")
+        out(INFO, "没找到协作区（找过：项目里的子模块、环境变量 AI_COLLAB_HOME、项目里的 .ai-collab、"
+                  "项目上一级 / 上两级目录、~/ai_collab、~/code 等常见位置）")
         if dry:
-            pending.add(f"协作区克隆到哪？（推荐 {default}）", f"--clone-to {quote(default)}")
+            pending.add(clone_question(root), "--clone-to <上面选的路径>", cmd_flag="--clone-to <路径>")
             return None, EXIT_ASK
         if term.ok:
-            dest = ask_clone_dest(term, default)
+            dest = ask_clone_dest(term, root)
         elif args.yes:
+            if not usable_dest(default):
+                out(FAIL, f"默认位置 {default} 已存在且不是协作区，也不是空目录，不动它。用 --clone-to <路径> 指定别的位置")
+                return None, EXIT_ERR
             dest = default
-            out(INFO, f"--yes：克隆到默认位置 {default}")
+            out(INFO, f"--yes：克隆到默认位置 {tilde(default)}")
         else:
-            pending.add(f"协作区克隆到哪？（推荐 {default}，和项目放在同一个上级目录）", f"--clone-to {quote(default)}")
+            pending.add(clone_question(root), "--clone-to <上面选的路径>", cmd_flag="--clone-to <路径>")
             if not looks_like_code(root) and not args.type:
                 pending.add("这个目录是哪类？" + " / ".join(f"{label}（{t}）" for t, label in TYPE_MENU),
                             "--type <类型>")
@@ -508,6 +594,7 @@ def locate_collab(root, args, term, pending, dry):
         return None, EXIT_ASK
     r = clone_collab(dest, repo, term, args, pending)
     if r == "ok":
+        args.collab_source = "新克隆"
         return real(dest), True
     return None, (EXIT_ASK if r == "ask" else EXIT_ERR)
 
@@ -560,9 +647,17 @@ def node_cmd():
     return node if code == 0 and m and int(m.group(1)) >= 18 else None
 
 
+def uses_claude_code():
+    """本机用 Claude Code：有 claude 命令，或有 Claude Code 自己才会建的东西。
+    不看 ~/.claude 目录本身：别的工具（如钉钉 CLI 装 skill）也会建它，不能当作装了 Claude Code 的依据。"""
+    h = Path.home()
+    return bool(shutil.which("claude")) or (h / ".claude.json").is_file() \
+        or (h / ".claude" / "plugins").is_dir() or (h / ".claude" / "projects").is_dir()
+
+
 def claude_needs_plugin():
-    """用 Claude Code（有 claude 命令或 ~/.claude）且还没装 ai-collab 插件。"""
-    if not (shutil.which("claude") or (Path.home() / ".claude").is_dir()):
+    """用 Claude Code 且还没装 ai-collab 插件。"""
+    if not uses_claude_code():
         return False
     f = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
     try:
@@ -571,29 +666,80 @@ def claude_needs_plugin():
         return True
 
 
-def skills_preview(args):
-    """返回 (要运行的命令或 None, 是否有改动)。"""
+def collab_skills_source(args, collab):
+    """协作区 skills 链接指向哪份协作区。子模块跟着项目版本走，不能给全机用：改用环境变量指的那份，没有就不装。"""
+    if args.collab_source != SUBMODULE_SRC:
+        return collab
+    env = (os.environ.get(ENV_NAME) or "").strip()
+    if env and is_collab(Path(env).expanduser()):
+        return real(Path(env).expanduser())
+    out(INFO, "协作区是本项目的子模块（只给本项目用），协作区的 skill 不装进各 AI 工具；"
+              "本机另有协作区（环境变量 AI_COLLAB_HOME）时会装那一份")
+    return None
+
+
+def skills_preview(args, collab):
+    """预览要装的 skills，返回 [(名称, 命令, 是否有改动, 写入的目录)]。
+    两个来源：插件仓库自己的 skill、协作区 skills/ 下的（install-skills.mjs --source，逻辑只在那一个脚本里）。"""
     if args.no_skills:
         out(INFO, "--no-skills：不装 skills")
-        return None, False
+        return []
     repo = plugin_repo_root()
+    mjs = repo / "scripts" / "install-skills.mjs" if repo else GUPO_SKILLS_CLONE / "scripts" / "install-skills.mjs"
+    jobs = []
     if repo is None:
-        out(INFO, "在 Claude Code 插件里运行：skills 由插件提供，不另外安装")
-        return None, False
+        out(INFO, "在 Claude Code 插件里运行：插件仓库的 skill 由插件提供，不另外安装")
     node = node_cmd()
     if not node:
-        out(INFO, "没有 Node 18+，跳过安装 skills（不影响接入和使用协作区；装了 Node 后重跑即可）")
-        return None, False
-    cmd = [node, str(repo / "scripts" / "install-skills.mjs"), "install"]
-    code, so, se = run(cmd + ["--dry-run"])
-    if code:
-        out(WARN, "skills 预览失败，跳过安装：" + ((se or so).splitlines() or [""])[-1])
-        return None, False
-    changed = "已是最新" not in so
-    for line in so.splitlines():
-        if line.startswith(("写入：", "预计改动", "已是最新")) or "⚠️" in line:
-            print(f"  skills {line.strip()}", flush=True)
-    return cmd, changed
+        out(INFO, "没有 Node 18+，跳过安装 skills（含协作区的设计规范、PPT 等 skill；不影响接入和使用协作区，"
+                  "AI 仍能经 AGENTS.md 读到规则；装了 Node 后重跑即可）")
+        return []
+    if repo is not None:
+        jobs.append(("插件", [node, str(mjs), "install"]))
+    src = collab_skills_source(args, collab)
+    if src is not None:
+        if mjs.is_file():
+            jobs.append(("协作区", [node, str(mjs), "install", "--source", str(src), "--label", COLLAB_SKILLS_LABEL,
+                                   "--skip", COLLAB_SKILLS_SKIP]))
+        else:
+            out(INFO, f"协作区的 skill 没装：本机没有插件仓库（{tilde(GUPO_SKILLS_CLONE)}）。"
+                      "在终端跑一次一条命令接入（README「快速开始」）会顺带装上")
+    res = []
+    for name, cmd in jobs:
+        code, so, se = run(cmd + ["--dry-run"])
+        if code:
+            out(WARN, f"{name}的 skills 预览失败，跳过：" + ((se or so).splitlines() or [""])[-1])
+            continue
+        dirs = ""
+        for line in so.splitlines():
+            if line.startswith("写入："):
+                dirs = line[len("写入："):].strip()
+            if line.startswith(("skill：", "跳过：", "写入：", "预计改动", "已是最新")) or "⚠️" in line:
+                print(f"  {name} skills {line.strip()}", flush=True)
+        res.append((name, cmd, "已是最新" not in so, dirs))
+    return res
+
+
+def change_summary(text, root, skills_jobs):
+    """要写的东西一句话列全（和预览里的「改动」一致）：项目文件、本机配置（环境变量、~/.claude/settings.json）、skills 目录。"""
+    items = []
+    home = str(Path.home())
+    for ln in text.splitlines():
+        ln = ln.strip()
+        if not ln.startswith("[改动]"):
+            continue
+        head, _, note = ln[len("[改动]"):].strip().partition("：")
+        head = head.replace(str(root) + os.sep, "").replace(home, "~")
+        note = re.sub(r"^新建，", "", note.split("；")[0])
+        items.append(f"{head}（{note}）" if note else head)
+    if not items and "认不出项目类型" in text:   # 还没选类型，预览没走到改动那一步：按惯例列
+        items = ["项目里的 AGENTS.md、.gitignore、.ai-collab 链接", f"本机环境变量 {ENV_NAME}"]
+        if (Path.home() / ".claude").is_dir():
+            items.append("~/.claude/settings.json（放行协作区目录）")
+    for name, _, changed, dirs in skills_jobs:
+        if changed:
+            items.append(f"{name}的 skills 链接（{dirs or '~/.agents/skills 等'}）")
+    return items
 
 
 def identity_set(collab):
@@ -641,6 +787,7 @@ def parse_args():
     args = ap.parse_args()
     if args.migrate and args.no_migrate:
         ap.error("--migrate 和 --no-migrate 只能选一个")
+    args.collab_source = None   # 找到协作区的来源（locate_collab 填）
     return args
 
 
@@ -657,7 +804,12 @@ def main():
     if dry:
         print("（--dry-run：只检查和预览，不写文件、不克隆、不提问）", flush=True)
     elif not term.ok:
-        why = f"检测到 AI 工具（{ai[0]}）" if ai else "没有可用的终端"
+        if ai:
+            why = f"检测到 AI 工具（{ai[0]}）"
+        elif IS_WIN and os.environ.get("GUPO_SETUP_ENTRY") == "sh":
+            why = "Git Bash 里没法直接提问（想逐项回答，改在 PowerShell 里运行 setup.ps1 那条命令）"
+        else:
+            why = "没有可用的终端"
         if args.yes:
             print(f"（{why}，已带 --yes：不再逐项确认；还缺的决定会列在最后）", flush=True)
         else:
@@ -721,7 +873,9 @@ def main():
                             "--migrate（替换）或 --no-migrate（保留）", cmd_flag="<--migrate 或 --no-migrate>")
         break
     setup_changes = "无改动，已经是接入好的状态" not in text
-    skills_run, skills_changes = skills_preview(args)
+    skills_jobs = skills_preview(args, collab)
+    skills_changes = any(j[2] for j in skills_jobs)
+    summary = change_summary(text, root, skills_jobs)
     if claude_needs_plugin():
         out(INFO, "用 Claude Code 的，另外在终端运行这三条装插件（本脚本不替你执行）：")
         print(f"         claude plugin marketplace add {MARKET_URL}\n"
@@ -731,8 +885,7 @@ def main():
     if not who and not args.name and not term.ok:
         pending.add(NAME_Q, "--name <钉钉姓名>", blocking=False)
     if (setup_changes or skills_changes) and not term.ok and not args.yes:
-        pending.add("确认写入上面列出的改动（项目里只改 AGENTS.md、.gitignore；本机写环境变量"
-                    + ("、装 skills" if skills_changes else "") + "）", "--yes")
+        pending.add("确认写入上面列出的改动：" + "；".join(summary or ["见上面预览"]), "--yes")
 
     if dry:
         if pending:
@@ -753,9 +906,10 @@ def main():
         out(OK, "没有要写的，已经是接好的状态")
     else:
         if term.ok and not args.yes:
-            print("将要：" + "；".join(x for x, on in (("按上面「改动」写入项目和本机配置", setup_changes),
-                                                       ("安装 skills", skills_changes)) if on), flush=True)
-            if not term.confirm("确认写入？", False):
+            print("将要写入：", flush=True)
+            for x in summary or ["按上面「改动」写入项目和本机配置"]:
+                print(f"  - {x}", flush=True)
+            if not term.confirm("确认写入？", True):
                 out(INFO, "已取消，什么都没写")
                 return EXIT_OK
         if setup_changes:
@@ -763,10 +917,12 @@ def main():
             if code not in (EXIT_OK, EXIT_ASK):
                 out(FAIL, "setup.py 写入出错，按上面 [FAIL] 那行处理后重跑")
                 return EXIT_ERR
-        if skills_run and skills_changes:
-            out(INFO, "安装 skills：" + " ".join(quote(tilde(c)) for c in skills_run[1:]))
-            if run_stream(skills_run):
-                out(WARN, "skills 没装成功，不影响接入；之后可重跑")
+        for name, cmd, changed, _ in skills_jobs:
+            if not changed:
+                continue
+            out(INFO, f"安装{name}的 skills：" + " ".join(quote(tilde(c)) for c in cmd[1:]))
+            if run_stream(cmd):
+                out(WARN, f"{name}的 skills 没装成功，不影响接入；之后可重跑")
 
     # 5 ---------------------------------------------------------------
     step(5, "收尾检查")
@@ -792,8 +948,18 @@ def main():
     print("\n== 接好了 ==", flush=True)
     if is_git:
         print("  - 项目里的 AGENTS.md、.gitignore 有改动的，自己检查后提交（脚本不替你提交）", flush=True)
-    print("  - 新开终端、重启 IDE 和 AI 工具后环境变量才生效；项目里的 .ai-collab 链接现在就能用", flush=True)
-    print("  - 验证：在这个目录打开 AI 工具，说「我有哪些接口任务」", flush=True)
+    if not args.no_env and args.collab_source != SUBMODULE_SRC:
+        print(f"  - 协作区位置已写进环境变量 {ENV_NAME}（{collab}）：以后在任何项目跑，"
+              "都会通过这个变量找到同一份协作区，不会再下第二份", flush=True)
+    print("  - 必须新开一个 AI 会话再用：项目 AGENTS.md 里的协作区规则、环境变量和 skills 都只在会话开始时读取，"
+          "接着用现在这个会话，AI 不会按协作区流程走（新开终端、重启 IDE 同理）", flush=True)
+    print("  - 别的项目：到那个项目里再跑一次同一条命令，或在那个项目里对 AI 说「接入协作区」（skills 已装好）", flush=True)
+    if os.environ.get("GUPO_SETUP_ENTRY") in ("sh", "ps1"):
+        print("  - 这条命令本身就是给当前项目接入，不需要再单独跑 ai-collab-setup", flush=True)
+    print("  - 验证：在这个目录新开 AI 会话，说「我有哪些接口任务」", flush=True)
+    if any(name == "协作区" for name, *_ in skills_jobs):
+        print("  - 协作区的 skill（设计规范、PPT、契约流程）也装进了各 AI 工具：平时直接说「做一个 xx 移动端页面」"
+              "AI 会自己用规范，想强制用就点名（如「用 gupo-mobile-design」）", flush=True)
     if exit_code == EXIT_ASK:
         pending.add(NAME_Q, "--name <钉钉姓名>", blocking=False)
         report_pending(pending, args, dry, wrote=True)
