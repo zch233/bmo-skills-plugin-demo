@@ -52,9 +52,11 @@ irm https://gitee.com/z-null/bmo-skills-plugin-demo/raw/main/setup.ps1 | iex
 
 > Claude Code 的 `/` 菜单里也可能显示成带插件名的 `/bmo:bmo-doctor`、`/ai-collab:ai-collab-setup`，是同一个。改名前的旧命令（`/bmo:` 后面直接跟 doctor、new 的那种）已经不再可用。
 
-项目建好之后，在项目目录里打开 AI 工具，还能用项目自带的 skill（在项目的 `.claude/skills/` 里，随 bmo 子模块同步）：接入现有模块（bmo-add）、组合现有功能做新页面（bmo-compose）、开发自定义页面（bmo-page）等。Claude Code 自动加载；其他工具暂时要让 AI 直接读对应的 `SKILL.md`。
+项目建好之后，在项目目录里打开 AI 工具，还能用项目自带的 skill（在项目的 `.claude/skills/` 里，随 bmo 子模块同步）：接入现有模块（bmo-add）、组合现有功能做新页面（bmo-compose）、开发自定义页面（bmo-page）等。bmo 同步时同时写进项目的 `.claude/skills` 和 `.agents/skills`，Claude Code 和其他工具都能自动加载。
 
 ## 安装（Claude Code）
+
+> **谁需要装插件**：主要是产品同学（用「帮我检查环境」准备电脑、「帮我创建一个新项目」建 bmo 项目）。**开发可以不装**：接入协作区的一条命令已经把日常用的协作区 skill（契约流程、自测、设计规范、PPT）装进 Claude Code 的 `~/.claude/skills`；想在 Claude Code 里直接说「接入协作区」「帮我检查环境」的再装。
 
 - **桌面应用**（Windows / Mac）：切到 **Code** 标签页（不是 Cowork），新建会话，文件夹选一个本机目录（Windows 上不要选 WSL 里的，WSL 会话用不了插件）。输入框旁的 **+ → 插件**能管理已装的插件，但添加这个市场要用命令行，把下面这段原样发送：
 

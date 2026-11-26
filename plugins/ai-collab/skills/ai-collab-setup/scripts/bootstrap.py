@@ -877,7 +877,8 @@ def main():
     skills_changes = any(j[2] for j in skills_jobs)
     summary = change_summary(text, root, skills_jobs)
     if claude_needs_plugin():
-        out(INFO, "用 Claude Code 的，另外在终端运行这三条装插件（本脚本不替你执行）：")
+        out(INFO, "要在 Claude Code 里用 bmo 新建项目、环境检查（主要是产品同学）的，再在终端运行这三条装插件；"
+                  "开发可以不装，协作区的 skill 已经装进 ~/.claude/skills（本脚本不替你执行）：")
         print(f"         claude plugin marketplace add {MARKET_URL}\n"
               "         claude plugin install bmo@gupo-bmo\n"
               "         claude plugin install ai-collab@gupo-bmo", flush=True)
